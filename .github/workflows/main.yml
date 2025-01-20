@@ -22,6 +22,11 @@ jobs:
       - name: Log in to GitLab Registry
         run: echo "${{ secrets.GITLAB_TOKEN }}" | docker login -u "${{ secrets.GITLAB_USERNAME }}" --password-stdin registry.gitlab.com
 
+      - name: List directory structure
+        run: |
+          ls -R
+
+
       # Step 4: Build and Push Docker Image
       - name: Build and Push Docker Image
         run: |
