@@ -30,6 +30,6 @@ jobs:
       # Step 4: Build and Push Docker Image
       - name: Build and Push Docker Image
         run: |
-          docker build -t registry.gitlab.com/dyno1785604/dynoforms -f ./DynoForm.backend/DynoForm.backend/Dockerfile ./DynoForm.backend
+          docker build -t registry.gitlab.com/dyno1785604/dynoforms -f DynoForm.backend/DynoForm.backend/Dockerfile DynoForm.backend/DynoForm.backend
           docker push registry.gitlab.com/dyno1785604/dynoforms
 
