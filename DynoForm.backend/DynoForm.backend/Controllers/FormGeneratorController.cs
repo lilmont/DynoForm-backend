@@ -127,4 +127,82 @@ public class FormGeneratorController : Controller
         }
     }
 
+    [HttpPost("add-data")]
+    public async Task<IActionResult> AddFormData([FromBody] FormDataVM formData)
+    {
+        if (formData == null || string.IsNullOrEmpty(formData.JsonData))
+            return BadRequest("Invalid request.");
+
+        try
+        {
+            Guid newId = Guid.NewGuid();
+            // Parse the JSON schema
+            var newFormData = new FormData
+            {
+                Id = newId,
+                JsonData = formData.JsonData,
+                FormId = formData.FormId,
+                DateCreated = DateTime.UtcNow,
+                DateUpdated = DateTime.UtcNow
+            };
+
+            _dbContext.FormData.Add(newFormData);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { FormDataId = newId });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpGet("form-data-details")]
+    public async Task<IActionResult> GetFormData([Required] Guid Id)
+    {
+        if (Id == new Guid())
+            return BadRequest("Invalid request.");
+
+        try
+        {
+            var formData = await _dbContext.FormData.FirstOrDefaultAsync(p => p.Id == Id);
+
+            if (formData == null)
+                return NotFound();
+
+            return Ok(new { FormData = formData });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    [HttpPost("edit-data")]
+    public async Task<IActionResult> EditFormData([FromBody] FormDataVM formData)
+    {
+        if (formData == null || string.IsNullOrEmpty(formData.JsonData))
+            return BadRequest("Invalid request.");
+
+        try
+        {
+            var existingFormData = await _dbContext.FormData.FirstOrDefaultAsync(p => p.Id == formData.Id);
+
+            if (existingFormData == null)
+                return NotFound();
+
+            // Parse the JSON schema
+            existingFormData.JsonData = formData.JsonData;
+            existingFormData.DateUpdated = DateTime.UtcNow;
+
+            _dbContext.FormData.Update(existingFormData);
+            await _dbContext.SaveChangesAsync();
+
+            return Ok(new { FormDataId = existingFormData.Id });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
 }
