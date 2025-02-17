@@ -4,6 +4,8 @@ using DynoForm.backend.ViewModels;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+
 
 namespace DynoForm.backend.Controllers;
 [ApiController]
@@ -28,7 +30,7 @@ public class FormGeneratorController : Controller
             var newForm = new Form
             {
                 Id = newId,
-                Title = form.Title,                
+                Title = form.Title,
                 JsonSchema = form.JsonSchema,
                 DateCreated = DateTime.UtcNow,
                 DateUpdated = DateTime.UtcNow
@@ -136,7 +138,6 @@ public class FormGeneratorController : Controller
         try
         {
             Guid newId = Guid.NewGuid();
-            // Parse the JSON schema
             var newFormData = new FormData
             {
                 Id = newId,
@@ -146,10 +147,23 @@ public class FormGeneratorController : Controller
                 DateUpdated = DateTime.UtcNow
             };
 
-            _dbContext.FormData.Add(newFormData);
-            await _dbContext.SaveChangesAsync();
+            using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            try
+            {
+                _dbContext.FormData.Add(newFormData);
 
-            return Ok(new { FormDataId = newId });
+                await SaveFormFieldDataAsync(newId, newFormData);
+
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { FormDataId = newId });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
         catch (Exception ex)
         {
@@ -186,19 +200,121 @@ public class FormGeneratorController : Controller
 
         try
         {
-            var existingFormData = await _dbContext.FormData.FirstOrDefaultAsync(p => p.Id == formData.Id);
+            var existingFormData = await _dbContext.FormData
+                .FirstOrDefaultAsync(p => p.Id == formData.Id);
 
             if (existingFormData == null)
                 return NotFound();
 
-            // Parse the JSON schema
-            existingFormData.JsonData = formData.JsonData;
-            existingFormData.DateUpdated = DateTime.UtcNow;
+            using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            try
+            {
+                // Update the FormData
+                existingFormData.JsonData = formData.JsonData;
+                existingFormData.DateUpdated = DateTime.UtcNow;
+                _dbContext.FormData.Update(existingFormData);
 
-            _dbContext.FormData.Update(existingFormData);
-            await _dbContext.SaveChangesAsync();
+                await SaveFormFieldDataAsync(existingFormData.Id, existingFormData);
 
-            return Ok(new { FormDataId = existingFormData.Id });
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { FormDataId = existingFormData.Id });
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"Internal server error: {ex.Message}");
+        }
+    }
+
+    private async Task SaveFormFieldDataAsync(Guid formDataId, FormData formData)
+    {
+        // Remove existing FormFieldData records
+        var existingFields = await _dbContext.FormFieldData
+            .Where(f => f.FormDataId == formDataId)
+            .ToListAsync();
+
+        if (existingFields.Any())
+        {
+            _dbContext.FormFieldData.RemoveRange(existingFields);
+        }
+
+        // Extract new FormFieldData
+        var formFieldData = ExtractFormFieldData(formData);
+        if (formFieldData.Count > 0)
+        {
+            _dbContext.FormFieldData.AddRange(formFieldData);
+        }
+    }
+
+
+    private List<FormFieldData> ExtractFormFieldData(FormData formData)
+    {
+        try
+        {
+            var jsonObject = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(formData.JsonData);
+
+            if (jsonObject != null)
+            {
+                var fieldDataEntries = jsonObject.Select(kvp => new FormFieldData
+                {
+                    Id = Guid.NewGuid(),
+                    FormDataId = formData.Id,
+                    FieldKey = kvp.Key,
+                    FieldValue = kvp.Value.ValueKind switch
+                    {
+                        JsonValueKind.String => kvp.Value.GetString() ?? string.Empty,
+                        JsonValueKind.Number => kvp.Value.GetRawText() ?? string.Empty,
+                        JsonValueKind.True => "true",
+                        JsonValueKind.False => "false",
+                        JsonValueKind.Array => string.Join(", ", kvp.Value.EnumerateArray().Select(e => e.ToString())),
+                        JsonValueKind.Object => kvp.Value.ToString(),
+                        _ => string.Empty
+                    },
+                    DateCreated = DateTime.UtcNow,
+                    DateUpdated = DateTime.UtcNow
+                }).ToList();
+
+                return fieldDataEntries;
+            }
+
+            return new List<FormFieldData>();
+        }
+        catch
+        {
+            return new List<FormFieldData>();
+        }
+    }
+
+    [HttpGet("form-data-list")]
+    public async Task<IActionResult> GetAllFormDataByFormId([Required] Guid Id)
+    {
+        try
+        {
+            var existingFormData = await _dbContext.FormFieldData
+                .Where(p => p.FormData.FormId == Id)
+                .ToListAsync();
+
+            var formTitle = await _dbContext.Forms
+                .Where(p => p.Id == Id)
+                .Select(p => p.Title)
+                .FirstOrDefaultAsync();
+
+
+            var result = new FormDataListVM
+            {
+                Title = formTitle != null ? formTitle : string.Empty,
+                Columns = existingFormData.GroupBy(p => p.FieldKey).Select(p => p.Key).ToList(),
+                Rows = existingFormData
+            };
+
+            return Ok(result);
         }
         catch (Exception ex)
         {
