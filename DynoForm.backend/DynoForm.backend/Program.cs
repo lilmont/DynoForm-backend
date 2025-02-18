@@ -29,6 +29,8 @@ builder.Services.AddCors(options =>
         else if (environment == "Production")
         {
             var prodOrigin = Environment.GetEnvironmentVariable("MY_SERVER_IP");
+            Console.WriteLine($"MY_SERVER_IP is set to: {prodOrigin}");
+
             policy.WithOrigins(prodOrigin)
                   .AllowAnyHeader()
                   .AllowAnyMethod();
