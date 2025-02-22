@@ -13,4 +13,27 @@ public class DynoDbContext : DbContext
     {
         
     }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Form>()
+            .Property(f => f.Id)
+            .HasColumnType("uuid");
+
+        modelBuilder.Entity<FormData>()
+            .Property(f => f.Id)
+            .HasColumnType("uuid");
+
+        modelBuilder.Entity<FormData>()
+            .Property(f => f.FormId)
+            .HasColumnType("uuid");
+
+        modelBuilder.Entity<FormFieldData>()
+            .Property(f => f.Id)
+            .HasColumnType("uuid");
+
+        modelBuilder.Entity<FormFieldData>()
+            .Property(f => f.FormDataId)
+            .HasColumnType("uuid");
+    }
 }
